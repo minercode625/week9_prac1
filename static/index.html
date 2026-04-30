@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prisoner's Dilemma Game</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+
+/* Pre-game */
+#pre-game { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+.join-form { background: #16213e; padding: 40px; border-radius: 16px; width: 500px; max-width: 90vw; }
+.join-form h1 { text-align: center; margin-bottom: 8px; font-size: 24px; }
+.join-form p.subtitle { text-align: center; color: #888; margin-bottom: 24px; font-size: 14px; }
+.join-form label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 14px; }
+.join-form input, .join-form textarea {
+    width: 100%; padding: 12px; border: 1px solid #333; border-radius: 8px;
+    background: #0f3460; color: #eee; font-size: 14px; margin-bottom: 16px;
+}
+.join-form textarea { height: 150px; resize: vertical; font-family: monospace; }
+.join-form button {
+    width: 100%; padding: 14px; background: #e94560; color: white; border: none;
+    border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;
+}
+.join-form button:hover { background: #c73e54; }
+.join-form button:disabled { background: #555; cursor: not-allowed; }
+#waiting-msg { text-align: center; margin-top: 16px; color: #e94560; display: none; }
+
+/* Game screen */
+#game-screen { display: none; padding: 20px; max-width: 1200px; margin: 0 auto; }
+
+/* Top bar */
+.top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 12px 20px; background: #16213e; border-radius: 12px; }
+.top-bar h2 { font-size: 18px; }
+.timer { font-size: 24px; font-weight: 700; color: #e94560; font-variant-numeric: tabular-nums; }
+
+/* Team cards */
+.teams-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.team-card {
+    background: #16213e; border-radius: 12px; padding: 16px; min-width: 150px; flex: 1;
+    text-align: center; border: 2px solid transparent; transition: all 0.2s;
+}
+.team-card.idle { border-color: #2ecc71; }
+.team-card.in_call, .team-card.choosing { border-color: #e94560; }
+.team-card .team-name { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+.team-card .team-score { color: #f1c40f; font-size: 14px; }
+.team-card .team-status { font-size: 12px; color: #888; margin: 4px 0 8px; }
+.team-card button {
+    padding: 8px 16px; background: #2ecc71; color: white; border: none;
+    border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;
+}
+.team-card button:hover { background: #27ae60; }
+.team-card button:disabled { background: #555; cursor: not-allowed; }
+
+/* Conversation panel */
+#call-panel { display: none; background: #16213e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+.call-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.call-header h3 { font-size: 16px; }
+.call-timer { font-size: 18px; font-weight: 700; color: #e94560; font-variant-numeric: tabular-nums; }
+#chat-log { height: 250px; overflow-y: auto; background: #0f3460; border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 14px; }
+.chat-msg { margin-bottom: 8px; line-height: 1.4; }
+.chat-msg.mine { color: #2ecc71; }
+.chat-msg.theirs { color: #3498db; }
+.chat-msg.system { color: #e94560; font-style: italic; }
+
+/* Button selection */
+#button-panel { display: none; text-align: center; margin-top: 16px; }
+#button-panel p { margin-bottom: 12px; font-size: 16px; font-weight: 600; }
+
+/* Result overlay */
+#result-panel { display: none; text-align: center; margin-top: 16px; padding: 16px; background: #0f3460; border-radius: 8px; }
+
+/* Leaderboard */
+.leaderboard { background: #16213e; border-radius: 12px; padding: 20px; }
+.leaderboard h3 { margin-bottom: 12px; }
+.leaderboard table { width: 100%; border-collapse: collapse; }
+.leaderboard th, .leaderboard td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #333; }
+.leaderboard th { color: #888; font-size: 12px; text-transform: uppercase; }
+.leaderboard .rank { width: 40px; }
+.leaderboard .highlight { color: #f1c40f; font-weight: 700; }
+
+/* Toast notification */
+#toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: #e74c3c; color: white; padding: 12px 24px; border-radius: 8px;
+    font-size: 14px; font-weight: 600; z-index: 1000; display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+/* Warning banner */
+.warning-banner {
+    background: #e74c3c; color: white; text-align: center; padding: 8px 16px;
+    font-size: 13px; font-weight: 600; margin-bottom: 12px; border-radius: 8px;
+}
+
+/* Game over */
+#game-over { display: none; text-align: center; padding: 40px; }
+#game-over h2 { font-size: 28px; margin-bottom: 20px; color: #e94560; }
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Pre-game Screen -->
+<div id="pre-game">
+  <div class="join-form">
+    <h1>Prisoner's Dilemma</h1>
+    <p class="subtitle">AI Agent Negotiation Game</p>
+    <label for="team-name">Team Name</label>
+    <input type="text" id="team-name" placeholder="Enter your team name" maxlength="20">
+    <label for="strategy-prompt">Strategy Prompt</label>
+    <textarea id="strategy-prompt" placeholder="Enter your AI agent's strategy...&#10;&#10;Example: Always promise to cooperate. If the opponent has betrayed before, threaten to choose red but actually choose green to build trust."></textarea>
+    <button id="join-btn" onclick="joinGame()">Join Game</button>
+    <p id="waiting-msg">Joined! Waiting for admin to start the game...</p>
+  </div>
+</div>
+
+<!-- Game Screen -->
+<div id="game-screen">
+  <div class="warning-banner">Do NOT refresh this page during the game! You will lose your connection and strategy.</div>
+  <div class="top-bar">
+    <h2 id="my-team-name">Team ?</h2>
+    <div class="timer" id="game-timer">05:00</div>
+  </div>
+
+  <div class="teams-grid" id="teams-grid"></div>
+
+  <div id="call-panel">
+    <div class="call-header">
+      <h3 id="call-opponent">Talking to: ?</h3>
+      <div class="call-timer" id="call-timer">40s</div>
+    </div>
+    <div id="chat-log"></div>
+    <div id="button-panel">
+      <p>AI is choosing a button...</p>
+    </div>
+    <div id="result-panel"></div>
+  </div>
+
+  <div class="leaderboard">
+    <h3>Leaderboard</h3>
+    <table>
+      <thead><tr><th class="rank">#</th><th>Team</th><th>Score</th></tr></thead>
+      <tbody id="leaderboard-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Game Over -->
+<div id="game-over">
+  <h2>Game Over!</h2>
+  <div class="leaderboard">
+    <h3>Final Scores</h3>
+    <table>
+      <thead><tr><th class="rank">#</th><th>Team</th><th>Score</th></tr></thead>
+      <tbody id="final-leaderboard"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let ws = null;
+let myTeam = "";
+let myStrategy = "";
+let currentCall = null; // {call_id, opponent, history, timer_end, you_are}
+let gameTimerEnd = null;
+let gameTimerInterval = null;
+let callTimerInterval = null;
+
+// --- Pre-game ---
+function joinGame() {
+    myTeam = document.getElementById("team-name").value.trim();
+    myStrategy = document.getElementById("strategy-prompt").value.trim();
+    if (!myTeam) { alert("Enter a team name"); return; }
+    if (!myStrategy) { alert("Enter a strategy prompt"); return; }
+
+    document.getElementById("join-btn").disabled = true;
+    document.getElementById("waiting-msg").style.display = "block";
+
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${protocol}//${location.host}/ws/${encodeURIComponent(myTeam)}`);
+    ws.onopen = () => {
+        ws.send(JSON.stringify({type: "set_strategy", strategy_prompt: myStrategy}));
+    };
+    ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        handleMessage(data);
+    };
+    ws.onclose = () => {
+        console.log("WebSocket closed");
+    };
+}
+
+// --- Message Router ---
+function handleMessage(data) {
+    switch (data.type) {
+        case "game_start": onGameStart(data); break;
+        case "game_end": onGameEnd(data); break;
+        case "state_update": onStateUpdate(data); break;
+        case "call_started": onCallStarted(data); break;
+        case "call_incoming": onCallIncoming(data); break;
+        case "chat_receive": onChatReceive(data); break;
+        case "choose_button": onChooseButton(data); break;
+        case "call_result": onCallResult(data); break;
+        case "error": onError(data); break;
+    }
+}
+
+// --- Game Events ---
+function onGameStart(data) {
+    gameTimerEnd = data.timer_end;
+    document.getElementById("pre-game").style.display = "none";
+    document.getElementById("game-screen").style.display = "block";
+    document.getElementById("my-team-name").textContent = myTeam;
+    startGameTimer();
+}
+
+function onGameEnd(data) {
+    clearInterval(gameTimerInterval);
+    clearInterval(callTimerInterval);
+    document.getElementById("game-screen").style.display = "none";
+    document.getElementById("game-over").style.display = "block";
+    const tbody = document.getElementById("final-leaderboard");
+    tbody.innerHTML = "";
+    data.final_scores.forEach((entry, i) => {
+        const tr = document.createElement("tr");
+        const isMe = entry.team === myTeam;
+        tr.innerHTML = `<td class="rank">${i+1}</td><td${isMe ? ' class="highlight"' : ''}>${entry.team}</td><td${isMe ? ' class="highlight"' : ''}>${entry.score}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+function onStateUpdate(data) {
+    if (data.timer_end && !gameTimerEnd) {
+        gameTimerEnd = data.timer_end;
+    }
+    updateTeamCards(data);
+    updateLeaderboard(data.leaderboard);
+}
+
+function onError(data) {
+    console.error("Server error:", data.message);
+    showToast(data.message);
+}
+
+function showToast(msg) {
+    const toast = document.getElementById("toast");
+    toast.textContent = msg;
+    toast.style.display = "block";
+    setTimeout(() => { toast.style.display = "none"; }, 3000);
+}
+
+// --- Team Cards ---
+function updateTeamCards(data) {
+    const grid = document.getElementById("teams-grid");
+    grid.innerHTML = "";
+    for (const [name, info] of Object.entries(data.teams)) {
+        if (name === myTeam) continue;
+        const card = document.createElement("div");
+        card.className = `team-card ${info.status}`;
+        const canCall = data.game_status === "running" && info.status === "idle"
+            && data.teams[myTeam] && data.teams[myTeam].status === "idle";
+        card.innerHTML = `
+            <div class="team-name">${name}</div>
+            <div class="team-score">Score: ${info.score}</div>
+            <div class="team-status">${info.status === "idle" ? "Available" : info.status === "in_call" ? "In Call" : "Choosing..."}</div>
+            <button ${canCall ? "" : "disabled"} onclick="makeCall('${name}')">Call</button>
+        `;
+        grid.appendChild(card);
+    }
+}
+
+function updateLeaderboard(leaderboard) {
+    const tbody = document.getElementById("leaderboard-body");
+    tbody.innerHTML = "";
+    leaderboard.forEach((entry, i) => {
+        const tr = document.createElement("tr");
+        const isMe = entry.team === myTeam;
+        tr.innerHTML = `<td class="rank">${i+1}</td><td${isMe ? ' class="highlight"' : ''}>${entry.team}</td><td${isMe ? ' class="highlight"' : ''}>${entry.score}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+// --- Calling ---
+function makeCall(target) {
+    ws.send(JSON.stringify({type: "call", target_team: target}));
+}
+
+function onCallStarted(data) {
+    startCall(data, data.opponent);
+    // Caller speaks first — generate first message
+    generateAndSendMessage();
+}
+
+function onCallIncoming(data) {
+    startCall(data, data.from_team);
+    // Receiver waits for first message
+}
+
+function startCall(data, opponent) {
+    currentCall = {
+        call_id: data.call_id,
+        opponent: opponent,
+        history: data.history,
+        timer_end: data.timer_end,
+        you_are: data.you_are,
+        messages: [],  // {role, content} for Ollama
+    };
+    document.getElementById("call-panel").style.display = "block";
+    document.getElementById("call-opponent").textContent = `Talking to: ${opponent}`;
+    document.getElementById("chat-log").innerHTML = "";
+    document.getElementById("button-panel").style.display = "none";
+    document.getElementById("result-panel").style.display = "none";
+    startCallTimer(data.timer_end);
+}
+
+// --- Chat ---
+function onChatReceive(data) {
+    if (!currentCall || data.call_id !== currentCall.call_id) return;
+    appendChat(data.message, "theirs");
+    currentCall.messages.push({role: "user", content: JSON.stringify({message: data.message})});
+    // Generate response
+    generateAndSendMessage();
+}
+
+function appendChat(text, cls) {
+    const log = document.getElementById("chat-log");
+    const div = document.createElement("div");
+    div.className = `chat-msg ${cls}`;
+    const prefix = cls === "mine" ? "Me" : cls === "theirs" ? currentCall.opponent : "System";
+    div.textContent = `[${prefix}] ${text}`;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
+// --- Ollama Integration ---
+async function callOllama(messages, includeButton) {
+    const systemPrompt = buildSystemPrompt();
+    const format = includeButton
+        ? {type: "object", properties: {message: {type: "string"}, button: {type: "string", enum: ["green", "red"]}}, required: ["message", "button"]}
+        : {type: "object", properties: {message: {type: "string"}}, required: ["message"]};
+
+    const allMessages = [{role: "system", content: systemPrompt}, ...messages];
+
+    try {
+        const resp = await fetch("http://localhost:11434/api/chat", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                model: "gemma4:latest",
+                messages: allMessages,
+                stream: false,
+                format: format,
+            }),
+        });
+        const result = await resp.json();
+        return JSON.parse(result.message.content);
+    } catch (err) {
+        console.error("Ollama error:", err);
+        if (includeButton) return {message: "...", button: Math.random() > 0.5 ? "green" : "red"};
+        return {message: "..."};
+    }
+}
+
+function buildSystemPrompt() {
+    let prompt = `You are playing an iterated Prisoner's Dilemma game.
+After a conversation with your opponent, you must choose green or red.
+Scoring: green+green = both get +3, green+red = green gets 0 and red gets +5, red+red = both get +1.
+During conversation, respond with JSON: {"message": "your message"}
+When asked to choose a button, respond with JSON: {"message": "final words", "button": "green" or "red"}
+Keep messages short (1-2 sentences).`;
+
+    // Add opponent history
+    if (currentCall && currentCall.history && currentCall.history.length > 0) {
+        prompt += `\n\nPrevious interactions with ${currentCall.opponent}:`;
+        let greenCount = 0, redCount = 0;
+        currentCall.history.forEach((h, i) => {
+            const theirBtn = h.buttons[currentCall.opponent] || "unknown";
+            if (theirBtn === "green") greenCount++;
+            if (theirBtn === "red") redCount++;
+            prompt += `\n- Round ${h.round}: They chose ${theirBtn}`;
+        });
+        prompt += `\n${currentCall.opponent} cumulative: green ${greenCount} times, red ${redCount} times`;
+    }
+
+    // Add student strategy
+    prompt += `\n\n[Your Strategy]\n${myStrategy}`;
+
+    return prompt;
+}
+
+async function generateAndSendMessage() {
+    if (!currentCall) return;
+    appendChat("(thinking...)", "system");
+
+    const ollamaMessages = [...currentCall.messages];
+    const result = await callOllama(ollamaMessages, false);
+
+    // Remove "thinking" message
+    const log = document.getElementById("chat-log");
+    if (log.lastChild) log.removeChild(log.lastChild);
+
+    const msg = result.message || "...";
+    appendChat(msg, "mine");
+    currentCall.messages.push({role: "assistant", content: JSON.stringify({message: msg})});
+
+    ws.send(JSON.stringify({
+        type: "chat_message",
+        call_id: currentCall.call_id,
+        message: msg,
+    }));
+}
+
+// --- Button Selection ---
+function onChooseButton(data) {
+    if (!currentCall || data.call_id !== currentCall.call_id) return;
+    clearInterval(callTimerInterval);
+    document.getElementById("button-panel").style.display = "block";
+
+    // AI chooses button
+    chooseButton();
+}
+
+async function chooseButton() {
+    const messages = [...currentCall.messages,
+        {role: "user", content: "The conversation is over. Choose your button now. Respond with JSON including 'message' and 'button' (green or red)."}
+    ];
+    const result = await callOllama(messages, true);
+
+    const button = result.button || "green";
+    const msg = result.message || "";
+
+    document.getElementById("button-panel").innerHTML = `
+        <p>AI chose: <span style="color: ${button === 'green' ? '#2ecc71' : '#e74c3c'}; font-size: 20px; font-weight: 700;">${button.toUpperCase()}</span></p>
+        ${msg ? `<p style="color: #888; font-size: 13px; margin-top: 4px;">"${msg}"</p>` : ""}
+    `;
+
+    ws.send(JSON.stringify({
+        type: "button_choice",
+        call_id: currentCall.call_id,
+        button: button,
+    }));
+}
+
+// --- Call Result ---
+function onCallResult(data) {
+    clearInterval(callTimerInterval);
+    const panel = document.getElementById("result-panel");
+    panel.style.display = "block";
+    const myColor = data.my_button === "green" ? "#2ecc71" : "#e74c3c";
+    const theirColor = data.their_button === "green" ? "#2ecc71" : "#e74c3c";
+    panel.innerHTML = `
+        <p style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">Round Result</p>
+        <p>You: <span style="color: ${myColor}; font-weight: 700;">${data.my_button.toUpperCase()}</span> (+${data.my_score})
+        &nbsp;&nbsp;|&nbsp;&nbsp;
+        ${currentCall ? currentCall.opponent : "Opponent"}: <span style="color: ${theirColor}; font-weight: 700;">${data.their_button.toUpperCase()}</span> (+${data.their_score})</p>
+    `;
+
+    // Reset after 3 seconds (capture call_id to avoid clearing a newer call)
+    const finishedCallId = data.call_id;
+    setTimeout(() => {
+        if (currentCall && currentCall.call_id === finishedCallId) {
+            document.getElementById("call-panel").style.display = "none";
+            currentCall = null;
+        }
+    }, 3000);
+}
+
+// --- Timers ---
+function startGameTimer() {
+    const el = document.getElementById("game-timer");
+    gameTimerInterval = setInterval(() => {
+        const remaining = Math.max(0, gameTimerEnd - Date.now() / 1000);
+        const m = Math.floor(remaining / 60);
+        const s = Math.floor(remaining % 60);
+        el.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+        if (remaining <= 0) clearInterval(gameTimerInterval);
+    }, 200);
+}
+
+function startCallTimer(timerEnd) {
+    const el = document.getElementById("call-timer");
+    clearInterval(callTimerInterval);
+    callTimerInterval = setInterval(() => {
+        const remaining = Math.max(0, timerEnd - Date.now() / 1000);
+        el.textContent = `${Math.ceil(remaining)}s`;
+        if (remaining <= 0) clearInterval(callTimerInterval);
+    }, 200);
+}
+</script>
+</body>
+</html>
