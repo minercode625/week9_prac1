@@ -46,16 +46,14 @@ ollama list
 학생 PC에서 정적 페이지를 로컬로 연다.
 
 macOS/Linux:
-
+week9_prac1/static 폴더 이동 후 터미널 실행
 ```bash
-cd "week9/week9_prac/practice#1/static"
 python3 -m http.server 8001
 ```
 
 Windows:
-
+week9_prac1/static 폴더 이동 후 cmd 실행
 ```bash
-cd "week9\week9_prac\practice#1\static"
 py -m http.server 8001
 ```
 
