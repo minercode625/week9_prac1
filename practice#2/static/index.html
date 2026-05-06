@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spy Among Us — 프롬프트 인젝션 게임</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+
+#pre-game { display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 20px; }
+.join-form { background: #16213e; padding: 32px; border-radius: 16px; width: 720px; max-width: 95vw; }
+.join-form h1 { text-align: center; margin-bottom: 6px; font-size: 24px; }
+.join-form p.subtitle { text-align: center; color: #888; margin-bottom: 24px; font-size: 13px; }
+.join-form label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: #ccc; }
+.join-form .hint { font-size: 11px; color: #888; margin-bottom: 6px; line-height: 1.5; }
+.join-form input, .join-form textarea {
+    width: 100%; padding: 10px; border: 1px solid #333; border-radius: 8px;
+    background: #0f3460; color: #eee; font-size: 13px; margin-bottom: 14px;
+}
+.join-form textarea { height: 90px; resize: vertical; font-family: monospace; font-size: 12px; }
+.join-form .prompt-block { background: #0f1a2e; padding: 14px; border-radius: 10px; margin-bottom: 12px; border-left: 4px solid #555; }
+.join-form .prompt-block.citizen { border-color: #2ecc71; }
+.join-form .prompt-block.spy { border-color: #e74c3c; }
+.join-form .prompt-block h3 { font-size: 14px; margin-bottom: 4px; }
+.join-form button {
+    width: 100%; padding: 13px; background: #e94560; color: white; border: none;
+    border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 10px;
+}
+.join-form button:hover { background: #c73e54; }
+.join-form button:disabled { background: #555; cursor: not-allowed; }
+#waiting-msg { text-align: center; margin-top: 14px; color: #2ecc71; display: none; font-weight: 600; }
+
+#game-screen { display: none; padding: 18px; max-width: 1100px; margin: 0 auto; }
+
+.top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding: 12px 18px; background: #16213e; border-radius: 12px; }
+.top-bar h2 { font-size: 16px; }
+.role-badge { padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 13px; }
+.role-badge.citizen { background: #2ecc71; color: #fff; }
+.role-badge.spy { background: #e74c3c; color: #fff; }
+.phase-tag { font-size: 13px; color: #f1c40f; font-weight: 600; }
+
+.info-panel { background: #16213e; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.info-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.info-row span.label { color: #888; }
+.info-row span.value { color: #f1c40f; font-weight: 700; }
+
+.history-panel { background: #16213e; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.history-panel h3 { font-size: 14px; margin-bottom: 10px; color: #888; }
+.history-list { max-height: 320px; overflow-y: auto; background: #0f3460; border-radius: 8px; padding: 12px; }
+.history-item { margin-bottom: 8px; font-size: 13px; line-height: 1.5; }
+.history-item .round-tag { display: inline-block; background: #555; color: #fff; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-right: 6px; }
+.history-item .team { font-weight: 700; color: #3498db; }
+.history-empty { color: #666; font-style: italic; text-align: center; padding: 20px; font-size: 13px; }
+
+.action-panel { background: #16213e; border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+.action-panel h3 { font-size: 15px; margin-bottom: 10px; }
+.thinking { color: #f39c12; font-style: italic; margin-top: 8px; }
+.generated-output { background: #0f3460; padding: 12px; border-radius: 8px; margin-top: 10px; font-size: 14px; line-height: 1.5; border-left: 4px solid #2ecc71; }
+.generated-output.warning { border-color: #e74c3c; }
+
+.vote-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.vote-option {
+    padding: 10px 18px; background: #0f3460; border: 2px solid #444; border-radius: 8px;
+    cursor: default; font-size: 14px; font-weight: 600;
+}
+.vote-option.my-vote { background: #f39c12; border-color: #f39c12; color: #fff; }
+
+#end-screen { display: none; padding: 30px; text-align: center; max-width: 800px; margin: 0 auto; }
+#end-screen h2 { font-size: 32px; margin-bottom: 16px; }
+#end-screen .winner-banner { display: inline-block; padding: 12px 30px; border-radius: 12px; font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+#end-screen .winner-banner.spy { background: #e74c3c; }
+#end-screen .winner-banner.citizens { background: #2ecc71; }
+#end-screen .reveal-block { background: #16213e; padding: 18px; border-radius: 12px; margin: 12px 0; text-align: left; }
+#end-screen .reveal-block h3 { font-size: 14px; color: #888; margin-bottom: 6px; }
+#end-screen .reveal-block .value { font-size: 18px; font-weight: 700; color: #f1c40f; }
+
+#toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: #e74c3c; color: white; padding: 12px 24px; border-radius: 8px;
+    font-size: 14px; font-weight: 600; z-index: 1000; display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.warning-banner {
+    background: #c0392b; color: white; text-align: center; padding: 8px 16px;
+    font-size: 12px; font-weight: 600; margin-bottom: 12px; border-radius: 8px;
+}
+
+.spy-keyword-form { display: flex; gap: 8px; margin-top: 10px; }
+.spy-keyword-form input { flex: 1; padding: 10px; background: #0f3460; border: 1px solid #444; border-radius: 8px; color: #eee; font-size: 14px; }
+.spy-keyword-form button { padding: 10px 20px; background: #e74c3c; border: none; border-radius: 8px; color: #fff; font-weight: 700; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<!-- ============================ Pre-Game ============================ -->
+<div id="pre-game">
+  <div class="join-form">
+    <h1>Spy Among Us</h1>
+    <p class="subtitle">LLM 기반 프롬프트 인젝션 / 디펜스 실습 게임</p>
+
+    <label for="team-name">팀 이름</label>
+    <input type="text" id="team-name" placeholder="예: TeamA" maxlength="20">
+
+    <div class="prompt-block citizen">
+      <h3>① 시민 — 키워드 설명 프롬프트 (Citizen Describe)</h3>
+      <p class="hint">시민일 때 사용. 키워드를 직접 말하지 않으면서도 다른 시민이 알아채도록 묘사해야 한다. 너무 직접적으로 말하면 스파이가 추측한다.</p>
+      <textarea id="prompt-citizen-describe" placeholder="예: 너는 시민이다. 주어진 키워드를 절대 그대로 말하지 마라. 80자 이내의 한 문장으로 다른 시민들이 알아챌 수 있을 만큼 묘사하되, 스파이가 단어를 추측할 수 없게 모호하게 표현하라."></textarea>
+    </div>
+
+    <div class="prompt-block citizen">
+      <h3>② 시민 — 스파이 추측 프롬프트 (Citizen Vote)</h3>
+      <p class="hint">시민일 때 투표 단계에서 사용. history 전체를 보고 가장 의심스러운 팀 하나를 골라야 한다.</p>
+      <textarea id="prompt-citizen-vote" placeholder="예: 너는 시민이다. 모든 발언 history와 카테고리, 키워드를 본 뒤 가장 어색하거나 키워드와 거리가 먼 묘사를 한 팀을 스파이로 지목하라. 자기 자신은 제외."></textarea>
+    </div>
+
+    <div class="prompt-block spy">
+      <h3>③ 스파이 — 속이는 프롬프트 (Spy Deceive)</h3>
+      <p class="hint">스파이일 때 사용. 키워드를 모르므로 카테고리와 다른 발언을 보고 시민인 척해야 한다. 프롬프트 인젝션 시도 가능.</p>
+      <textarea id="prompt-spy-deceive" placeholder="예: 너는 스파이이지만 들키면 안 된다. 주어진 카테고리와 다른 팀의 발언을 분석하여 가장 가능성 높은 키워드를 추정하고, 그것을 모호하게 묘사해 시민처럼 자연스럽게 끼어들어라."></textarea>
+    </div>
+
+    <div class="prompt-block spy">
+      <h3>④ 스파이 — 최종 키워드 추측 프롬프트 (Spy Final Guess)</h3>
+      <p class="hint">스파이로 발각되었을 때 마지막 1회 기회로 키워드를 추측. 정답이면 역전승.</p>
+      <textarea id="prompt-spy-final" placeholder="예: 너는 스파이로 정체가 들통났다. 마지막 기회다. 카테고리와 모든 시민의 발언 history를 종합 분석해 키워드 한 단어를 추측하라. 출력은 단어 하나만."></textarea>
+    </div>
+
+    <button id="join-btn" onclick="joinGame()">게임 입장</button>
+    <p id="waiting-msg">접속 완료! 운영자가 게임을 시작할 때까지 기다리세요.</p>
+  </div>
+</div>
+
+<!-- ============================ Game Screen ============================ -->
+<div id="game-screen">
+  <div class="warning-banner">게임 중 페이지 새로고침 금지! 연결과 프롬프트가 모두 사라집니다.</div>
+
+  <div class="top-bar">
+    <h2 id="my-team-name">Team ?</h2>
+    <span id="role-badge" class="role-badge"></span>
+    <span class="phase-tag" id="phase-tag">대기 중</span>
+  </div>
+
+  <div class="info-panel">
+    <div class="info-row">
+      <div><span class="label">카테고리:</span> <span class="value" id="info-category">-</span></div>
+      <div id="keyword-row"><span class="label">키워드:</span> <span class="value" id="info-keyword">-</span></div>
+      <div><span class="label">발화 순서:</span> <span class="value" id="info-order">-</span></div>
+    </div>
+  </div>
+
+  <div class="history-panel">
+    <h3>발언 History (모두에게 공개)</h3>
+    <div class="history-list" id="history-list">
+      <div class="history-empty">아직 발언이 없습니다.</div>
+    </div>
+  </div>
+
+  <div class="action-panel" id="action-panel">
+    <h3 id="action-title">게임 시작 대기 중</h3>
+    <div id="action-body"></div>
+  </div>
+</div>
+
+<!-- ============================ End Screen ============================ -->
+<div id="end-screen">
+  <h2>게임 종료</h2>
+  <div id="winner-banner" class="winner-banner"></div>
+  <div class="reveal-block"><h3>카테고리</h3><div class="value" id="end-category">-</div></div>
+  <div class="reveal-block"><h3>정답 키워드</h3><div class="value" id="end-keyword">-</div></div>
+  <div class="reveal-block"><h3>스파이</h3><div class="value" id="end-spy">-</div></div>
+  <div class="reveal-block" id="end-suspected-block" style="display:none;"><h3>지목된 팀</h3><div class="value" id="end-suspected">-</div></div>
+  <div class="reveal-block" id="end-spyguess-block" style="display:none;"><h3>스파이의 최종 추측</h3><div class="value" id="end-spyguess">-</div></div>
+  <div class="reveal-block"><h3>승리 사유</h3><div class="value" id="end-reason">-</div></div>
+</div>
+
+<script>
+// =============== State ===============
+let ws = null;
+let myTeam = "";
+let myRole = null;          // 'citizen' | 'spy'
+let myPrompts = {};         // 4 prompts
+let category = null;
+let keyword = null;         // null if spy
+let gameRules = "";
+let teamNames = [];
+let history = [];           // [{team, message, round}]
+let votedAlready = false;
+let speechSubmitted = false;
+let finalGuessSubmitted = false;
+let lastOllamaErrorAt = 0;
+
+const queryParams = new URLSearchParams(location.search);
+function readLocalSetting(key) {
+    try { return localStorage.getItem(key); } catch (err) { return null; }
+}
+
+function writeLocalSetting(key, value) {
+    try { localStorage.setItem(key, value); } catch (err) {}
+}
+
+const remoteServer = parseUrlParam(queryParams.get("server"), "https");
+const OLLAMA_BASE_URL = normalizeBaseUrl(
+    queryParams.get("ollama") || readLocalSetting("ollama_base_url") || "http://127.0.0.1:11434",
+    "http"
+);
+const OLLAMA_MODEL = queryParams.get("model") || readLocalSetting("ollama_model") || "gemma4:latest";
+if (queryParams.get("ollama")) writeLocalSetting("ollama_base_url", OLLAMA_BASE_URL);
+if (queryParams.get("model")) writeLocalSetting("ollama_model", OLLAMA_MODEL);
+
+function parseUrlParam(value, defaultScheme) {
+    if (!value || !value.trim()) return null;
+    const raw = value.trim();
+    const text = /^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `${defaultScheme}://${raw}`;
+    try { return new URL(text); } catch (err) { return null; }
+}
+
+function normalizeBaseUrl(value, defaultScheme) {
+    const parsed = parseUrlParam(value, defaultScheme);
+    return parsed ? parsed.origin : "";
+}
+
+function websocketUrl(path) {
+    if (remoteServer) {
+        const protocol = remoteServer.protocol === "https:" ? "wss:" : "ws:";
+        return `${protocol}//${remoteServer.host}${path}`;
+    }
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${location.host}${path}`;
+}
+
+// =============== Pre-game ===============
+async function joinGame() {
+    myTeam = document.getElementById("team-name").value.trim();
+    const cd = document.getElementById("prompt-citizen-describe").value.trim();
+    const cv = document.getElementById("prompt-citizen-vote").value.trim();
+    const sd = document.getElementById("prompt-spy-deceive").value.trim();
+    const sf = document.getElementById("prompt-spy-final").value.trim();
+
+    if (!myTeam) { alert("팀 이름을 입력하세요."); return; }
+    if (!cd || !cv || !sd || !sf) { alert("4개 프롬프트를 모두 입력하세요."); return; }
+
+    myPrompts = {citizen_describe: cd, citizen_vote: cv, spy_deceive: sd, spy_final: sf};
+
+    document.getElementById("join-btn").disabled = true;
+    const ollamaStatus = await checkOllamaReady();
+    if (!ollamaStatus.ok) {
+        alert(ollamaStatus.message);
+        showToast(ollamaStatus.message, 7000);
+        document.getElementById("join-btn").disabled = false;
+        return;
+    }
+
+    document.getElementById("waiting-msg").style.display = "block";
+
+    ws = new WebSocket(websocketUrl(`/ws/${encodeURIComponent(myTeam)}`));
+    ws.onopen = () => {
+        ws.send(JSON.stringify({type: "set_prompts", ...myPrompts}));
+    };
+    ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        handleMessage(data);
+    };
+    ws.onclose = () => { console.log("WebSocket closed"); };
+}
+
+// =============== Message Router ===============
+function handleMessage(data) {
+    switch (data.type) {
+        case "prompts_accepted": break;
+        case "state_update": onStateUpdate(data); break;
+        case "game_start": onGameStart(data); break;
+        case "your_turn": onYourTurn(data); break;
+        case "waiting_for_speaker": onWaitingForSpeaker(data); break;
+        case "speech": onSpeech(data); break;
+        case "voting_phase": onVotingPhase(data); break;
+        case "vote_results": onVoteResults(data); break;
+        case "spy_final_phase": onSpyFinalPhase(data); break;
+        case "spy_caught": onSpyCaught(data); break;
+        case "game_end": onGameEnd(data); break;
+        case "game_reset": location.reload(); break;
+        case "error": showToast(data.message); break;
+    }
+}
+
+function showToast(msg, duration = 3500) {
+    const toast = document.getElementById("toast");
+    toast.textContent = msg;
+    toast.style.display = "block";
+    setTimeout(() => { toast.style.display = "none"; }, duration);
+}
+
+function onStateUpdate(data) {
+    if (data.history) renderHistory(data.history);
+}
+
+// =============== Game Start ===============
+function onGameStart(data) {
+    myRole = data.role;
+    category = data.category;
+    keyword = data.keyword;
+    gameRules = data.rules;
+    teamNames = data.team_names;
+    history = [];
+
+    document.getElementById("pre-game").style.display = "none";
+    document.getElementById("game-screen").style.display = "block";
+    document.getElementById("my-team-name").textContent = myTeam;
+
+    const badge = document.getElementById("role-badge");
+    if (myRole === "spy") {
+        badge.textContent = "🕵 SPY";
+        badge.className = "role-badge spy";
+    } else {
+        badge.textContent = "👤 CITIZEN";
+        badge.className = "role-badge citizen";
+    }
+
+    document.getElementById("info-category").textContent = category;
+    if (myRole === "citizen") {
+        document.getElementById("info-keyword").textContent = keyword;
+    } else {
+        document.getElementById("info-keyword").textContent = "??? (스파이는 모름)";
+    }
+    document.getElementById("info-order").textContent = data.speaking_order.join(" → ");
+
+    document.getElementById("phase-tag").textContent = "Round 1";
+    setActionTitle("게임 시작! 발화 순서를 기다립니다.");
+    setActionBody("");
+}
+
+// =============== Speech Phase ===============
+async function onYourTurn(data) {
+    speechSubmitted = false;
+    history = data.history;
+    renderHistory(history);
+    document.getElementById("phase-tag").textContent = `Round ${data.round} — 내 차례 (${data.speaker_position}/${data.total_speakers})`;
+    setActionTitle(`Round ${data.round} — 당신의 발화 차례`);
+    setActionBody(`<div class="thinking">AI가 발언을 생성 중...</div>`);
+
+    const speech = await generateSpeech(data.round, history);
+    if (speechSubmitted) return;
+    speechSubmitted = true;
+
+    setActionBody(`<div class="generated-output"><strong>제출한 발언:</strong><br>${escapeHtml(speech)}</div>`);
+
+    ws.send(JSON.stringify({
+        type: "submit_speech",
+        message: speech,
+    }));
+}
+
+function onWaitingForSpeaker(data) {
+    document.getElementById("phase-tag").textContent = `Round ${data.round}`;
+    setActionTitle(`${data.speaker} 팀이 발화 중...`);
+    setActionBody(`<div class="thinking">기다려 주세요.</div>`);
+}
+
+function onSpeech(data) {
+    history.push(data.speech);
+    renderHistory(history);
+}
+
+function renderHistory(h) {
+    history = h;
+    const box = document.getElementById("history-list");
+    if (!h || h.length === 0) {
+        box.innerHTML = '<div class="history-empty">아직 발언이 없습니다.</div>';
+        return;
+    }
+    box.innerHTML = "";
+    h.forEach((sp) => {
+        const div = document.createElement("div");
+        div.className = "history-item";
+        div.innerHTML = `<span class="round-tag">R${sp.round}</span><span class="team">${escapeHtml(sp.team)}</span>: ${escapeHtml(sp.message)}`;
+        box.appendChild(div);
+    });
+    box.scrollTop = box.scrollHeight;
+}
+
+// =============== Voting Phase ===============
+async function onVotingPhase(data) {
+    votedAlready = false;
+    history = data.history;
+    renderHistory(history);
+    document.getElementById("phase-tag").textContent = "투표 페이즈";
+    setActionTitle("투표 단계 — 누가 스파이인가?");
+    setActionBody(`<div class="thinking">AI가 투표 결정 중...</div>`);
+
+    const candidates = data.team_names.filter((n) => n !== myTeam);
+    let voted;
+    if (myRole === "spy") {
+        // Spy votes randomly among non-self
+        voted = candidates[Math.floor(Math.random() * candidates.length)];
+    } else {
+        voted = await generateVote(history, candidates);
+    }
+
+    if (votedAlready) return;
+    votedAlready = true;
+
+    setActionBody(`<div class="generated-output"><strong>나의 투표:</strong> ${escapeHtml(voted)}<br><span style="font-size:12px;color:#888;">(다른 팀 결과는 모두 제출 후 동시 공개)</span></div>`);
+
+    ws.send(JSON.stringify({
+        type: "submit_vote",
+        voted_team: voted,
+    }));
+}
+
+function onVoteResults(data) {
+    document.getElementById("phase-tag").textContent = "투표 결과";
+    setActionTitle("투표 결과");
+    let html = "<div style='margin-top:8px;'><strong>득표 현황:</strong><div class='vote-options'>";
+    Object.entries(data.counts).sort((a,b) => b[1]-a[1]).forEach(([team, c]) => {
+        html += `<div class="vote-option">${escapeHtml(team)}: ${c}표</div>`;
+    });
+    html += "</div></div>";
+    if (data.tie) {
+        html += `<div class="generated-output warning"><strong>동률 발생!</strong> 시민이 합의에 실패하여 스파이가 승리합니다.</div>`;
+    } else {
+        html += `<div class="generated-output"><strong>지목된 팀:</strong> ${escapeHtml(data.suspected)}</div>`;
+    }
+    setActionBody(html);
+}
+
+// =============== Spy Final Phase ===============
+async function onSpyFinalPhase(data) {
+    finalGuessSubmitted = false;
+    document.getElementById("phase-tag").textContent = "스파이 최종 추측";
+    setActionTitle("당신은 스파이로 발각되었습니다. 키워드를 1회 추측하세요!");
+    setActionBody(`<div class="thinking">AI가 키워드 추측 중...</div>`);
+
+    const guess = await generateFinalGuess(history);
+    if (finalGuessSubmitted) return;
+    finalGuessSubmitted = true;
+
+    setActionBody(`<div class="generated-output warning"><strong>최종 추측:</strong> ${escapeHtml(guess)}</div>`);
+
+    ws.send(JSON.stringify({
+        type: "submit_final_guess",
+        guess: guess,
+    }));
+}
+
+function onSpyCaught(data) {
+    document.getElementById("phase-tag").textContent = "스파이 최종 추측 대기";
+    setActionTitle(`스파이(${data.spy})가 마지막 키워드 추측 중...`);
+    setActionBody(`<div class="thinking">기다려 주세요.</div>`);
+}
+
+// =============== Game End ===============
+function onGameEnd(data) {
+    document.getElementById("game-screen").style.display = "none";
+    document.getElementById("end-screen").style.display = "block";
+
+    const banner = document.getElementById("winner-banner");
+    if (data.winner === "spy") {
+        banner.textContent = "🕵 SPY 승리!";
+        banner.className = "winner-banner spy";
+    } else {
+        banner.textContent = "👥 CITIZENS 승리!";
+        banner.className = "winner-banner citizens";
+    }
+
+    document.getElementById("end-category").textContent = data.category || "-";
+    document.getElementById("end-keyword").textContent = data.keyword || "-";
+    document.getElementById("end-spy").textContent = data.spy || "-";
+
+    if (data.suspected) {
+        document.getElementById("end-suspected-block").style.display = "block";
+        document.getElementById("end-suspected").textContent = data.suspected;
+    }
+    if (data.spy_guess !== null && data.spy_guess !== undefined) {
+        document.getElementById("end-spyguess-block").style.display = "block";
+        document.getElementById("end-spyguess").textContent = data.spy_guess || "(빈 문자열)";
+    }
+
+    const reasonMap = {
+        "wrong_suspect": "시민이 스파이 식별 실패 → 스파이 승",
+        "vote_tie": "투표 동률 → 스파이 승",
+        "no_votes": "투표 없음 → 스파이 승",
+        "keyword_guessed": "스파이가 마지막 추측에서 키워드 적중 → 스파이 승",
+        "wrong_guess": "스파이의 최종 추측 실패 → 시민 승",
+    };
+    document.getElementById("end-reason").textContent = reasonMap[data.reason] || data.reason;
+}
+
+// =============== UI Helpers ===============
+function setActionTitle(t) { document.getElementById("action-title").textContent = t; }
+function setActionBody(html) { document.getElementById("action-body").innerHTML = html; }
+function escapeHtml(s) {
+    if (s === null || s === undefined) return "";
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// =============== Ollama Integration ===============
+async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, {...options, signal: controller.signal});
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function buildOllamaHelpMessage(detail = "") {
+    const remotePage = location.protocol === "https:" && !["localhost", "127.0.0.1"].includes(location.hostname);
+    if (remotePage) {
+        return `Ollama 연결 실패. 외부 HTTPS 페이지에서는 브라우저가 로컬 Ollama를 차단할 수 있습니다. 학생용 페이지를 127.0.0.1에서 열고 ?server=${location.origin} 를 붙여 접속하세요.${detail ? " (" + detail + ")" : ""}`;
+    }
+    return `Ollama 연결 실패. Ollama 앱이 켜져 있고 ${OLLAMA_BASE_URL} 에서 ${OLLAMA_MODEL} 모델을 사용할 수 있는지 확인하세요.${detail ? " (" + detail + ")" : ""}`;
+}
+
+async function checkOllamaReady() {
+    try {
+        const resp = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/tags`, {method: "GET"}, 5000);
+        if (!resp.ok) {
+            return {ok: false, message: buildOllamaHelpMessage(`HTTP ${resp.status}`)};
+        }
+        const data = await resp.json();
+        const modelNames = (data.models || []).map((m) => m.name);
+        if (!modelNames.includes(OLLAMA_MODEL)) {
+            return {
+                ok: false,
+                message: `Ollama에는 ${OLLAMA_MODEL} 모델이 없습니다. 터미널에서 ollama pull ${OLLAMA_MODEL} 실행 후 다시 입장하세요.`,
+            };
+        }
+        return {ok: true};
+    } catch (err) {
+        const detail = err && err.name === "AbortError" ? "timeout" : "";
+        return {ok: false, message: buildOllamaHelpMessage(detail)};
+    }
+}
+
+function reportOllamaError(message) {
+    const now = Date.now();
+    if (now - lastOllamaErrorAt > 5000) {
+        lastOllamaErrorAt = now;
+        showToast(message, 7000);
+    }
+}
+
+async function callOllama(systemPrompt, schema) {
+    const messages = [{role: "system", content: systemPrompt}];
+    try {
+        const resp = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/chat`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                model: OLLAMA_MODEL,
+                messages: messages,
+                stream: false,
+                format: schema,
+                options: {temperature: 0.8},
+            }),
+        }, 45000);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const result = await resp.json();
+        if (!result.message || !result.message.content) throw new Error("empty response");
+        return JSON.parse(result.message.content);
+    } catch (err) {
+        console.error("Ollama error:", err);
+        reportOllamaError(buildOllamaHelpMessage(err.message || ""));
+        return null;
+    }
+}
+
+function buildHistoryText(h) {
+    if (!h || h.length === 0) return "(아직 발언 없음)";
+    return h.map((sp) => `[R${sp.round}] ${sp.team}: ${sp.message}`).join("\n");
+}
+
+async function generateSpeech(round, hist) {
+    const isSpy = (myRole === "spy");
+    const studentPrompt = isSpy ? myPrompts.spy_deceive : myPrompts.citizen_describe;
+    const roleName = isSpy ? "SPY" : "CITIZEN";
+    let info;
+    if (isSpy) {
+        info = `[당신의 역할] SPY\n[카테고리] ${category}\n[키워드] 알 수 없음 (스파이는 키워드를 모름)`;
+    } else {
+        info = `[당신의 역할] CITIZEN\n[카테고리] ${category}\n[키워드] ${keyword}`;
+    }
+    const systemPrompt =
+        gameRules + "\n\n" +
+        info + "\n\n" +
+        `[현재 라운드] ${round}\n` +
+        `[지금까지의 발언 history]\n${buildHistoryText(hist)}\n\n` +
+        `[당신의 차례] 80자 이내의 한 문장으로 묘사하시오. JSON 형식으로 {"message": "..."} 만 출력.\n\n` +
+        `[학생 작성 ${roleName} 묘사 프롬프트]\n${studentPrompt}`;
+
+    const schema = {
+        type: "object",
+        properties: {message: {type: "string"}},
+        required: ["message"],
+    };
+    const result = await callOllama(systemPrompt, schema);
+    if (!result || !result.message) return "...";
+    return String(result.message).slice(0, 80);
+}
+
+async function generateVote(hist, candidates) {
+    const studentPrompt = myPrompts.citizen_vote;
+    const systemPrompt =
+        gameRules + "\n\n" +
+        `[당신의 역할] CITIZEN\n[카테고리] ${category}\n[키워드] ${keyword}\n\n` +
+        `[모든 발언 history]\n${buildHistoryText(hist)}\n\n` +
+        `[투표 단계] 자신을 제외한 팀 중 가장 의심스러운 한 팀을 고르시오.\n` +
+        `[선택 가능한 팀] ${candidates.join(", ")}\n` +
+        `JSON 형식으로 {"voted_team": "팀명", "reason": "사유"} 출력. voted_team은 반드시 위 목록 중 하나여야 함.\n\n` +
+        `[학생 작성 CITIZEN 추론 프롬프트]\n${studentPrompt}`;
+
+    const schema = {
+        type: "object",
+        properties: {
+            voted_team: {type: "string", enum: candidates},
+            reason: {type: "string"},
+        },
+        required: ["voted_team"],
+    };
+    const result = await callOllama(systemPrompt, schema);
+    if (!result || !result.voted_team || !candidates.includes(result.voted_team)) {
+        // fallback random
+        return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+    return result.voted_team;
+}
+
+async function generateFinalGuess(hist) {
+    const studentPrompt = myPrompts.spy_final;
+    const systemPrompt =
+        gameRules + "\n\n" +
+        `[당신의 역할] SPY (정체가 발각됨)\n[카테고리] ${category}\n\n` +
+        `[모든 발언 history]\n${buildHistoryText(hist)}\n\n` +
+        `[최종 기회] 카테고리 안에서 키워드를 한 단어로 추측하시오. 단 1회만 가능.\n` +
+        `JSON 형식으로 {"keyword_guess": "단어"} 출력.\n\n` +
+        `[학생 작성 SPY 최종추측 프롬프트]\n${studentPrompt}`;
+
+    const schema = {
+        type: "object",
+        properties: {keyword_guess: {type: "string"}},
+        required: ["keyword_guess"],
+    };
+    const result = await callOllama(systemPrompt, schema);
+    if (!result || !result.keyword_guess) return "";
+    return String(result.keyword_guess).trim();
+}
+</script>
+</body>
+</html>
