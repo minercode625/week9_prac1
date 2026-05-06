@@ -6,19 +6,22 @@ import json
 import time
 import uuid
 import random
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
 
 @app.get("/")
 async def team_page():
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(BASE_DIR, "static", "index.html"))
 
 
 @app.get("/admin")
 async def admin_page():
-    return FileResponse("static/admin.html")
+    return FileResponse(os.path.join(BASE_DIR, "static", "admin.html"))
 
 
 # --- Game State ---

@@ -170,19 +170,66 @@ let currentCall = null; // {call_id, opponent, history, timer_end, you_are}
 let gameTimerEnd = null;
 let gameTimerInterval = null;
 let callTimerInterval = null;
+let lastOllamaErrorAt = 0;
+
+const queryParams = new URLSearchParams(location.search);
+function readLocalSetting(key) {
+    try { return localStorage.getItem(key); } catch (err) { return null; }
+}
+
+function writeLocalSetting(key, value) {
+    try { localStorage.setItem(key, value); } catch (err) {}
+}
+
+const remoteServer = parseUrlParam(queryParams.get("server"), "https");
+const OLLAMA_BASE_URL = normalizeBaseUrl(
+    queryParams.get("ollama") || readLocalSetting("ollama_base_url") || "http://127.0.0.1:11434",
+    "http"
+);
+const OLLAMA_MODEL = queryParams.get("model") || readLocalSetting("ollama_model") || "gemma4:latest";
+if (queryParams.get("ollama")) writeLocalSetting("ollama_base_url", OLLAMA_BASE_URL);
+if (queryParams.get("model")) writeLocalSetting("ollama_model", OLLAMA_MODEL);
+
+function parseUrlParam(value, defaultScheme) {
+    if (!value || !value.trim()) return null;
+    const raw = value.trim();
+    const text = /^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `${defaultScheme}://${raw}`;
+    try { return new URL(text); } catch (err) { return null; }
+}
+
+function normalizeBaseUrl(value, defaultScheme) {
+    const parsed = parseUrlParam(value, defaultScheme);
+    return parsed ? parsed.origin : "";
+}
+
+function websocketUrl(path) {
+    if (remoteServer) {
+        const protocol = remoteServer.protocol === "https:" ? "wss:" : "ws:";
+        return `${protocol}//${remoteServer.host}${path}`;
+    }
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${location.host}${path}`;
+}
 
 // --- Pre-game ---
-function joinGame() {
+async function joinGame() {
     myTeam = document.getElementById("team-name").value.trim();
     myStrategy = document.getElementById("strategy-prompt").value.trim();
     if (!myTeam) { alert("Enter a team name"); return; }
     if (!myStrategy) { alert("Enter a strategy prompt"); return; }
 
     document.getElementById("join-btn").disabled = true;
+    const ollamaStatus = await checkOllamaReady();
+    if (!ollamaStatus.ok) {
+        alert(ollamaStatus.message);
+        showToast(ollamaStatus.message, 7000);
+        document.getElementById("join-btn").disabled = false;
+        return;
+    }
+
     document.getElementById("waiting-msg").style.display = "block";
 
-    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${protocol}//${location.host}/ws/${encodeURIComponent(myTeam)}`);
+    ws = new WebSocket(websocketUrl(`/ws/${encodeURIComponent(myTeam)}`));
     ws.onopen = () => {
         ws.send(JSON.stringify({type: "set_strategy", strategy_prompt: myStrategy}));
     };
@@ -247,11 +294,11 @@ function onError(data) {
     showToast(data.message);
 }
 
-function showToast(msg) {
+function showToast(msg, duration = 3000) {
     const toast = document.getElementById("toast");
     toast.textContent = msg;
     toast.style.display = "block";
-    setTimeout(() => { toast.style.display = "none"; }, 3000);
+    setTimeout(() => { toast.style.display = "none"; }, duration);
 }
 
 // --- Team Cards ---
@@ -338,6 +385,53 @@ function appendChat(text, cls) {
 }
 
 // --- Ollama Integration ---
+async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, {...options, signal: controller.signal});
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function buildOllamaHelpMessage(detail = "") {
+    const remotePage = location.protocol === "https:" && !["localhost", "127.0.0.1"].includes(location.hostname);
+    if (remotePage) {
+        return `Ollama 연결 실패. 외부 HTTPS 페이지에서는 브라우저가 로컬 Ollama를 차단할 수 있습니다. 학생용 페이지를 127.0.0.1에서 열고 ?server=${location.origin} 를 붙여 접속하세요.${detail ? " (" + detail + ")" : ""}`;
+    }
+    return `Ollama 연결 실패. Ollama 앱이 켜져 있고 ${OLLAMA_BASE_URL} 에서 ${OLLAMA_MODEL} 모델을 사용할 수 있는지 확인하세요.${detail ? " (" + detail + ")" : ""}`;
+}
+
+async function checkOllamaReady() {
+    try {
+        const resp = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/tags`, {method: "GET"}, 5000);
+        if (!resp.ok) {
+            return {ok: false, message: buildOllamaHelpMessage(`HTTP ${resp.status}`)};
+        }
+        const data = await resp.json();
+        const modelNames = (data.models || []).map((m) => m.name);
+        if (!modelNames.includes(OLLAMA_MODEL)) {
+            return {
+                ok: false,
+                message: `Ollama에는 ${OLLAMA_MODEL} 모델이 없습니다. 터미널에서 ollama pull ${OLLAMA_MODEL} 실행 후 다시 입장하세요.`,
+            };
+        }
+        return {ok: true};
+    } catch (err) {
+        const detail = err && err.name === "AbortError" ? "timeout" : "";
+        return {ok: false, message: buildOllamaHelpMessage(detail)};
+    }
+}
+
+function reportOllamaError(message) {
+    const now = Date.now();
+    if (now - lastOllamaErrorAt > 5000) {
+        lastOllamaErrorAt = now;
+        showToast(message, 7000);
+    }
+}
+
 async function callOllama(messages, includeButton) {
     const systemPrompt = buildSystemPrompt();
     const format = includeButton
@@ -347,20 +441,23 @@ async function callOllama(messages, includeButton) {
     const allMessages = [{role: "system", content: systemPrompt}, ...messages];
 
     try {
-        const resp = await fetch("http://localhost:11434/api/chat", {
+        const resp = await fetchWithTimeout(`${OLLAMA_BASE_URL}/api/chat`, {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({
-                model: "gemma4:latest",
+                model: OLLAMA_MODEL,
                 messages: allMessages,
                 stream: false,
                 format: format,
             }),
-        });
+        }, 45000);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const result = await resp.json();
+        if (!result.message || !result.message.content) throw new Error("empty response");
         return JSON.parse(result.message.content);
     } catch (err) {
         console.error("Ollama error:", err);
+        reportOllamaError(buildOllamaHelpMessage(err.message || ""));
         if (includeButton) return {message: "...", button: Math.random() > 0.5 ? "green" : "red"};
         return {message: "..."};
     }
